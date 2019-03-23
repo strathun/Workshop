@@ -1,6 +1,8 @@
 %% Quickly visualizes raw data to find channels of interest.
 % will load all .mat files in a folder and generate plots for each. Figure
-% number follows order in folder. (Fig. 1 = top file)
+% numbers do not necessarily follow order in directory! Run with figDelete
+% to get rid of bad files
+
 Fs = 600e3;
 files = dir(pwd);
 f = ~[files.isdir];

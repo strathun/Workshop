@@ -1,12 +1,13 @@
 %% This is for loading and handling Mohit's multiplexed data. 
 clear
 
-%channels of interest so far...
-%ch6_2018_7_10_18_53_53_1048576_smpls_raw.mat
-%ch0_1_2018_7_10_18_30_49_raw.mat
-%ch5_6_2018_7_10_18_44_4_raw.mat
-%2018_7_27_12_38_24_8388608_smpls_raw.mat'
-%2018_7_27_12_41_11_8388608_smpls_raw.mat
+% channels of interest so far...
+% ch6_2018_7_10_18_53_53_1048576_smpls_raw.mat
+% ch0_1_2018_7_10_18_30_49_raw.mat
+% ch5_6_2018_7_10_18_44_4_raw.mat
+% 2018_7_27_12_38_24_8388608_smpls_raw.mat'
+% 2018_7_27_12_41_11_8388608_smpls_raw.mat
+% 2018_8_6_13_34_42_262144_smpls_raw.mat
 
 %Loads data into a usable format
 V =  load('2018_8_6_13_34_42_262144_smpls_raw.mat');  %choose channel
@@ -33,7 +34,7 @@ sortedChannels = cell(channels,1);
 for i = 1:channels
     Vordered(i,:) = V(i:channels:end,:);
 end
-channels = 1;
+% channels = 1;
 
 % x values for plots
 x = 1:1:length(Vordered);

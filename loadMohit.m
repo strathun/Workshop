@@ -1,4 +1,6 @@
 %% This is for loading and handling Mohit's multiplexed data. 
+% This is the script we used for MDPI
+
 clear
 
 %channels of interest so far...
@@ -24,8 +26,9 @@ clear
 %2018_8_29_15_9_43_8388608_smpls_raw (0-4), (5-9)
 
 %
+% 2019_2_28_15_8_56_16_4194303_8_9_10_11_12_13_14_15_0_1_2_3_4_5_6_7_smpls_raw.mat
 %Loads data into a usable format
-V =  load('2018_8_29_15_35_37_8388608_smpls_raw.mat');  %choose channel
+V =  load('2019_3_18_11_18_33_16_4194304_13_9_11_14_8_12_5_15_10_0_3_1_4_2_6_7_smpls_raw.mat');  %choose channel
 % V =  load('2018_8_29_14_24_18_8388608_smpls_raw.mat');  %choose channel
 
 V1 = struct2cell(V);
@@ -34,22 +37,22 @@ V = double(V)*1.8;
 V = V.';
 
 %______User defined variables_______%
-channels = 2;        % number of channels to sort
-anaStart = 10.05;      %
-anaTime = 13.95;       % time in seconds to analyze from recording. set to 0 to analyze full recording
+channels = 16;        % number of channels to sort
+anaStart = 2;      %
+anaTime = 0;       % time in seconds to analyze from recording. set to 0 to analyze full recording
 % anaStart = 2;      %
 % anaTime = 6;
-chop = 0;            %0 for no, 1 for yes;
+chop = 0;            %0 for no, 1 for yes; If no, the data will not be manually sorted. Instead, just start and end at anaStart and anaTime.
 Fs = 600e3;          % sampling frequency
 channelMax = 16;     % Based off absolute "Fs" above
-threshold = -3.5;    % threshold x rms = spike detected
-rejectMod = 1.7;     % reject "spikes" that are rejectMod x greater than mean shape
-passBandF = 800;     % Frequency in Hz of high passband
-passBandFL = 4000;   % Frequency in Hz of low passband
-bpRange = [750 4000];%
-bandstop = 26;       % Frequency in Hz of bandstop
+threshold = -3.7;    % threshold x rms = spike detected
+rejectMod = 1.5;       % reject "spikes" that are rejectMod x greater than mean shape
+passBandF = 010;     % Frequency in Hz of high passband
+passBandFL = 0350;   % Frequency in Hz of low passband
+bpRange = [750 7500];%
+bandstop = 3500;     % Frequency in Hz of bandstop
 order = 3;           % Order for Butterworth Filter
-filterType = 4;      % 0 lowpass; 1 high pass butter; 2 bandstop; 3 bypass filter; 4 HP and LP 
+filterType = 6;      % 0 lowpass; 1 high pass butter; 2 bandstop; 3 bypass filter; 4 HP and LP; 6: HP and LP ZeroPhase; 7 = HP and LP ZeroPhase with bandstop
 avgYN = 0;           % 1 to avg data, 0 for no avg
 ARP = .001;
 %___________________________________%
@@ -83,8 +86,10 @@ if avgYN == 1
     Fs = Fs / channels / avgPoints ; 
 else
     n = channelMax / channels ;
-    Vorderedf = downsample(Vordered.',n,1);
-    Vordered = Vorderedf.';
+    if n>1
+        Vorderedf = downsample(Vordered.',n,1);
+        Vordered = Vorderedf.';
+    end
     Fs = Fs / channels / n ;
 end
 %% Cutting out resets and sorting
@@ -97,6 +102,12 @@ elseif chop == 0
     eventsNew = [];
 end
 
+
+%% Common average referencing (CAR)
+if channels > 2
+   Vordered = comAvgRef( Vordered ); 
+   %Vfiltered = ( dataHighPass ); 
+end
 %% Filtering
 % This script will filter our raw time domain data
 
@@ -138,18 +149,37 @@ elseif filterType == 5
     dataHighPass = bandpass(dataMeanSub.',bpRange,( Fs ) );
     dataHighPass = dataHighPass.';
     dataHighPass = dataHighPass(:, ( Fs*.05 ) : ( end - (Fs*.05)) );    %Cuts out filter artefacts at beginning and end of filtered data.
+elseif filterType == 6
+    %Butterworth filter _ high pass
+    [ B, A ] = butter( order, passBandF / ( Fs/2 ), 'high');
+    dataMeanSub = dataMeanSub.';    %filter takes column as channels, not rows
+    dataHighPass = filtfilt( B, A, dataMeanSub);
+
+    %Butterworth filter _ low pass
+    [ B, A ] = butter( order, passBandFL / ( Fs/2 ));
+    dataHighPass = filtfilt( B, A, dataHighPass);
+    dataHighPass = dataHighPass.';
+elseif filterType == 7
+    %Butterworth filter _ high pass
+    [ B, A ] = butter( order, passBandF / ( Fs/2 ), 'high');
+    dataMeanSub = dataMeanSub.';    %filter takes column as channels, not rows
+    dataHighPass = filtfilt( B, A, dataMeanSub);
+
+    %Butterworth filter _ low pass
+    [ B, A ] = butter( order, passBandFL / ( Fs/2 ));
+    dataHighPass = filtfilt( B, A, dataHighPass);
+    
+    %Butterworth filter _ bandstop
+    d = designfilt('bandstopiir','FilterOrder',20,'HalfPowerFrequency1',...
+               (bandstop - .04*bandstop),'HalfPowerFrequency2',(bandstop + .04*bandstop), ...
+               'DesignMethod','butter','SampleRate',Fs);
+    dataHighPass = filtfilt(d,dataHighPass);    
+    dataHighPass = dataHighPass.';
 else
     dataHighPass = dataMeanSub ;
 end
 
-%Common Average Referencing
-if channels > 3
-   Vfiltered = comAvgRef( dataHighPass ); 
-   %Vfiltered = ( dataHighPass ); 
-else
-    Vfiltered = dataHighPass;
-end
-
+Vfiltered = dataHighPass;
 %% Plots spike events
 
 % x values for plots
@@ -166,7 +196,7 @@ timefilt = time;
 for i = 1:channels
     %grabbing data
     [spikesIndex, threshVal] = spike_detection(Vfiltered(i,:),threshold,1,0);
-    [waveforms{i}, timeWave, spikesIndex] = waveformGrabber(Vfiltered(i,:), spikesIndex, 1.6, Fs);
+    [waveforms{i}, timeWave, spikesIndex] = waveformGrabber(Vfiltered(i,:), spikesIndex, 1.6, Fs); % Must be more than two spike events
     
     %spikesTemp = cell2mat(spikesIndex(i));
     spikesTemp = (spikesIndex);
@@ -201,7 +231,7 @@ for i = 1:channels
     waveform = waveforms{i} ;
     [waveform, spikeEventsNew] = templateMatcher(waveform,rejectMod, spikesIndex, ARP, Fs); %removes "bad" spikes
     [eventsMod, ~] = size(waveform) ; 
-    [threshCount(i+1), ~] = size(waveform); %+1 to add zero at beginning for below...
+    [~, threshCount(i+1)] = size(spikeEventsNew); %+1 to add zero at beginning for below...
     spikeEventsRaster{i} = spikeEventsNew;
      
     %SNR calculation (Per RC Kelly (2007) J Neurosci 27:261)
@@ -226,13 +256,13 @@ for i = 1:channels
     meanWave = mean(waveform) ;
     plot(timeWave*1e3, meanWave, 'LineWidth', 3.5)
     xlabel('Time (ms)');
-    ylim([-80 60])
+%     ylim([-80 60])
     
     figure(500)
     plot(timeWave*1e3, meanWave, 'LineWidth', 3.5)
     hold on
     xlabel('Time (ms)');
-    ylim([-80 60])
+%     ylim([-80 60])
 %     % ISI histogram
 %     isiArray(i) = diff(spikes(i))
 %     figure
@@ -254,14 +284,16 @@ xlabel('Time (s)');
 xpoints = (xpoints.')/Fs;
 ypoints = ypoints.';
 threshCount = threshCount * 3;
+runningIndex = 0;   % This variable helps the counter below divide spike times to the correct channel
 
 for i = 2: (channels+1)
-    xpointsSorted = xpoints(threshCount(i-1) + 1: (threshCount(i)+ threshCount(i-1)));
-    ypointsSorted = ypoints(threshCount(i-1) + 1: (threshCount(i)+ threshCount(i-1)));
+    xpointsSorted = xpoints((1 + runningIndex): (threshCount(i)+ runningIndex)); %pulls out spike times for the current channel
+    ypointsSorted = ypoints((1 + runningIndex): (threshCount(i)+ runningIndex));
     figure(i-1)
-    ylim([-150 150])
-    plot(xpointsSorted,((ypointsSorted)*50)-(150+(50*(i-2))),'k')
-    xlim([0 4])
+    ypointsSorted = ypointsSorted - (i-2);  % Need to add this step to remove raster offset if doing multiple channels
+    scaleAdjust = round( range( Vfiltered(i-1,:) ), -1 ) * ( .25 );    % Makes plot pretty
+    plot( xpointsSorted,( ( ypointsSorted ) .* scaleAdjust )-( 4 .* scaleAdjust ), 'k' )
+    runningIndex = runningIndex + threshCount(i);
 end
 %% Plot of raw data for gut check
 
@@ -274,11 +306,12 @@ for i = 1:channels
 end
 
 %% Plots PSD
-avgs = 64;
+% avgs = 64;
+avgs = 7;
 
 figure
 for i = 1:channels
-    [pxx1,f] = psdWalker(Vfiltered(i,:),avgs,Fs);
+    [pxx1,f] = psdWalker(Vfiltered(i,:)./1e6,avgs,Fs); % convert to volts
     loglog(f,(pxx1))
     hold on
 end
@@ -287,7 +320,7 @@ xlabel('Frequency (Hz)')
 
 figure
 for i = 1:channels
-    [pxx1,f] = psdWalker(Vordered(i,:),avgs,Fs);
+    [pxx1,f] = psdWalker(Vordered(i,:)./1e6,avgs,Fs);  % convert to volts
     loglog(f,(pxx1))
     hold on
 end
@@ -304,22 +337,22 @@ xlabel('Frequency (Hz)')
 % hold off
 
 %% ISI data
-
+% uncomment the %% lines to plot this data
 for i = 1:channels
     spikeEventsDif = diff((spikeEventsRaster{i}/Fs)*(1e3));
     % [h, edges] = histcounts(spikeEventsDif,64);
     edges = 0:1:200;
-    figure
-    histogram(spikeEventsDif,edges)
-    xlim([0 20])
-    xlabel('Inter-Spike Interval (ms)')
-    ylabel('Number of Counts')
+% %     figure
+% %     histogram(spikeEventsDif,edges)
+% %     xlim([0 20])
+% %     xlabel('Inter-Spike Interval (ms)')
+% %     ylabel('Number of Counts')
 
 
     [isiArray, isiX] = isiContinuous((spikeEventsRaster{i}/Fs)*(1e3),50,4);
-    figure
-    plot(isiX/(1e3),isiArray)
-    xlabel('Time (s)')
-    ylabel('Inter-Spike Interval (ms)')
+% %     figure
+% %     plot(isiX/(1e3),isiArray)
+% %     xlabel('Time (s)')
+% %     ylabel('Inter-Spike Interval (ms)')
 end
 
